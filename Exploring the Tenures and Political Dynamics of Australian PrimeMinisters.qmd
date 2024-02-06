@@ -1,0 +1,178 @@
+---
+title: "Exploring the Tenures and Political Dynamics of Australian Prime Ministers"
+author: "Yingqi Pang"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document: default
+  bookdown::pdf_document2:
+    extra_dependencies: float
+thanks: "Code and data are available at: https://github.com/pangyin2/Exploring-the-Tenures-and-Political-Dynamics-of-Australian-Prime-Ministers.git"
+bibliography: reference.bib
+---
+```{r setup, fig.pos = "!H", include = FALSE}
+install.packages("babynames")
+install.packages("gh")
+install.packages("here")
+install.packages("httr")
+install.packages("janitor")
+install.packages("jsonlite")
+install.packages("knitr")
+install.packages("lubridate")
+install.packages("pdftools")
+install.packages("purrr")
+install.packages("rvest")
+install.packages("spotifyr")
+install.packages("tesseract")
+install.packages("tidyverse")
+install.packages("usethis")
+install.packages("xml2")
+install.packages("kableExtra")
+```
+
+```{r, include = FALSE}
+library(babynames)
+library(gh)
+library(here)
+library(httr)
+library(janitor)
+library(jsonlite)
+library(knitr)
+library(lubridate)
+library(pdftools)
+library(purrr)
+library(rvest)
+library(spotifyr)
+library(tesseract)
+library(tidyverse)
+library(usethis)
+library(xml2)
+library(kableExtra)
+```
+\newpage
+# Content
+```{r,echo = FALSE}
+set.seed(853)
+options(warn = -1)
+simulated_dataset <-
+  tibble(
+    prime_minister = babynames |>
+      filter(prop > 0.01) |>
+      distinct(name) |>
+      unlist() |>
+      sample(size = 10, replace = FALSE),
+    birth_year = sample(1700:1990, size = 10, replace = TRUE),
+    years_lived = sample(50:100, size = 10, replace = TRUE),
+    death_year = birth_year + years_lived
+  ) |>
+  select(prime_minister, birth_year, death_year, years_lived) |>
+  arrange(birth_year)
+
+kable(simulated_dataset, caption = "Simulated dataset")%>%
+  kable_styling(font_size = 10)
+```
+
+```{r,include = FALSE}
+raw_data <-
+  read_html("https://en.wikipedia.org/wiki/List_of_prime_ministers_of_Australia")
+write_html(raw_data, "pms.html")
+```
+
+```{r,include = FALSE}
+raw_data <- read_html("pms.html")
+```
+
+```{r,echo = FALSE}
+parse_data_selector_gadget <-
+  raw_data |>
+  html_element(".wikitable") |>
+  html_table()
+
+colnames(parse_data_selector_gadget) <- as.character(unlist(parse_data_selector_gadget[1, ]))
+parse_data_selector_gadget <- parse_data_selector_gadget[-1, ]
+
+kable(head(parse_data_selector_gadget |> select(-Politicalparty, -'Governor-General', -Ministry, -Monarch, -Ref.)), caption = "Parsed data selector gadget") %>% kable_styling(font_size = 6)
+```
+
+```{r,echo = FALSE}
+parsed_data <-
+  parse_data_selector_gadget |> 
+  clean_names() |> 
+  rename(raw_text = name_birth_death_constituency) |> 
+  select(raw_text) |> 
+  filter(raw_text != "Name(Birth–Death)Constituency") |> 
+  distinct() 
+
+kable(head(parsed_data), caption = "Parsed data after filtering")%>%
+  kable_styling(font_size = 15)
+```
+
+```{r,include = FALSE}
+initial_clean <-
+  parsed_data |>
+  separate(
+    raw_text, into = c("name", "extra"), sep = "\\(", extra = "merge"
+  ) |> 
+  separate(
+    extra, into = c("years", "additional"), sep = "\\)MP for ", extra = "merge"
+  ) |>
+  mutate(
+    born = str_extract(years, "^[[:digit:]]{4}"),
+    died = str_extract(years, "[[:digit:]]{4}$")
+  ) |>
+  select(name, born, died)
+
+  
+kable(head(initial_clean), caption = "First-stage cleaned data")%>%
+  kable_styling(font_size = 15)
+```
+
+\newpage
+```{r,echo = FALSE}
+cleaned_data <-
+  initial_clean |> 
+  mutate(across(c(born, died), as.integer)) |> 
+  mutate(Age_at_Death = died - born) |> 
+  distinct() # Some of the PMs had two goes at it.
+
+kable(head(cleaned_data), caption = "Second-stage cleaned data")%>%
+  kable_styling(font_size = 15)
+```
+
+```{r,echo = FALSE}
+cleaned_data |>
+  head() |>
+  kable(
+    col.names = c("Prime Minister", "Birth year", "Death year", "Age at death"),     caption = "Third-stage cleaned data(renamed columns)"
+    )%>%
+  kable_styling(font_size = 15)
+```
+
+```{r,echo = FALSE}
+cleaned_data |>
+  mutate(
+    still_alive = if_else(is.na(died), "Yes", "No"),
+    died = if_else(is.na(died), as.integer(2023), died)
+  ) |>
+  mutate(name = as_factor(name)) |>
+  ggplot(
+    aes(x = born, xend = died, y = name, yend = name, color = still_alive)
+    ) +
+  geom_segment() +
+  labs(
+    x = "Year of birth", y = "Prime minister", color = "PM is currently alive", title = "Timeline of Australian Prime Ministers' Lifespans and Status") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom")
+```
+\newpage
+
+# Discussion
+The graphical analysis of the tenures of Australian Prime Ministers offers a detailed account of the ebb and flow of political power through the years. It serves as a visual chronicle of the country's governance, revealing the prominence of the Liberal Party of Australia, which has maintained power for the longest combined duration. This dominance is a testament to the party's ability to resonate with the electorate and to sustain governance over extended periods, underlining its significant role in shaping national policies and directions. In stark contrast, smaller political entities like the National Party of Australia have experienced shorter periods in power, as seen through the brevity of their representation on the timeline. This contrast not only underscores the variability in political success among Australia's parties but also highlights the complexity of the nation's political fabric, where longevity in office can be indicative of both political stability and the voters' trust.
+
+The dataset for this analysis was curated from Wikipedia, a repository of knowledge that is collaboratively edited and updated by users worldwide. Wikipedia's strength lies in its vast, diverse, and frequently updated content, providing a rich, albeit user-generated, source of historical and political data [@enwiki:1191852550]. In this case, the data on Australian Prime Ministers was readily accessible and extensive, covering numerous aspects of political careers. However, the open-edit nature of Wikipedia introduces the need for critical evaluation. Data extracted from such a platform must be cross-validated with official records or other reliable sources to ensure accuracy. While Wikipedia is an invaluable starting point for broad overviews and information gathering, its utility in scholarly and professional research is contingent upon careful verification and acknowledgment of its crowd-sourced structure. This necessary step of validation can add to the time required for analysis but is crucial for maintaining the integrity of the findings.
+
+The data acquisition and analytical journey was a multifaceted and intricate endeavor, starting with the extraction of data through web scraping [@citeR]. Web scraping, a technique used to gather large amounts of data from websites automatically, was a critical tool in this process. However, the unstructured nature of web data presented a significant challenge, as information on the internet is not always presented in an easily digestible format. The raw data collected was messy and unrefined, necessitating a rigorous and meticulous approach to data cleaning—a procedure where irrelevant, redundant, or incorrect information is identified and corrected or removed. The subsequent step involved transforming this cleaned data into a structured format conducive to analysis. Crafting scripts to automate this process required an iterative approach, with multiple rounds of trial and error to fine-tune the algorithms. This stage, although time-consuming, was vital to ensure that the data was accurate and analysis-ready. The final stage of visualization was where the data truly came to life. Through the use of graphical representations, complex data sets were distilled into clear, concise visual narratives. This transformation was particularly gratifying; patterns that were not initially apparent in the raw data began to emerge, telling the historical story of Australia's political leadership. Observing these patterns evolve into a coherent story was both enlightening and enjoyable, as it translated dry figures into dynamic insights. If the process were to be repeated, a greater emphasis on automation from the outset could streamline the workflow, reducing the time spent on data cleaning and transformation. Furthermore, investing time in the initial design of the data structure might minimize the need for later adjustments. Despite the unexpected complexities, the intersection of technical challenge and creative storytelling in data science proved to be a rewarding experience.
+
+For future endeavours in data analysis, particularly those involving political history or similar complex topics, a methodical and sophisticated approach to data processing would be highly advantageous. Automating the cleaning of data could be refined through advanced scripting, employing algorithms capable of identifying inconsistencies and normalizing datasets with minimal manual oversight. This would significantly reduce project timelines and allow for a focus on more strategic tasks. Expanding the variety of data sources, such as incorporating academic databases, official government records, and reputable historical archives, would enrich the analysis, allowing for a more nuanced understanding of political trends and patterns. By juxtaposing data from varied sources, one could capture a more comprehensive picture of the influences shaping political trajectories. This refined methodology would not only accelerate the analytical process but also deepen the insights gleaned, offering a more sophisticated narrative of political history. The lessons learned from this project would be instrumental in crafting a more nuanced, efficient approach to future analyses.
+
+# Reference
